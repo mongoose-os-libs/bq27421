@@ -21,6 +21,11 @@
 
 #include "mgos.h"
 
+static inline bool mgos_bq27421_sleep(void) {
+  mgos_usleep(100);
+  return true;
+}
+
 struct mgos_bq27421 *mgos_bq27421_create(struct mgos_i2c *bus) {
   if (bus == NULL) return NULL;
   struct mgos_bq27421 *ctx = (struct mgos_bq27421 *) calloc(1, sizeof(*ctx));
@@ -87,7 +92,7 @@ bool mgos_bq27421_enter_cfg_update(struct mgos_bq27421 *ctx) {
   if (!mgos_bq27421_unseal(ctx)) return false;
   if (!mgos_bq27421_ctl(ctx, MGOS_BQ27421_CTL_SET_CFGUPDATE)) return false;
   while (!(flags & MGOS_BQ27421_FLAG_CFGUPMODE)) {
-    mgos_msleep(1);
+    mgos_bq27421_sleep();
     if (!mgos_bq27421_reg_read(ctx, MGOS_BQ27421_REG_FLAGS, &flags))
       return false;
   }
@@ -112,7 +117,7 @@ bool mgos_bq27421_exit_cfg_update(struct mgos_bq27421 *ctx, bool seal) {
       return false;
     }
     reset = false;
-    mgos_msleep(1);
+    mgos_bq27421_sleep();
   } while (flags & MGOS_BQ27421_FLAG_CFGUPMODE);
   if (seal && !mgos_bq27421_ctl(ctx, MGOS_BQ27421_CTL_SEALED)) return false;
   return true;
@@ -123,12 +128,15 @@ bool mgos_bq27421_data_read(struct mgos_bq27421 *ctx, uint8_t data_class,
   if (!mgos_bq27421_unseal(ctx)) return false;
   uint8_t block_num = (offset >> 5);
   uint8_t block_offset = (offset & 0x1f);
+  mgos_bq27421_sleep();
   if (!mgos_i2c_write_reg_b(ctx->bus, MGOS_BQ27421_ADDR,
                             MGOS_BQ27421_REG_DATA_CLASS, data_class) ||
+      !mgos_bq27421_sleep() ||
       !mgos_i2c_write_reg_b(ctx->bus, MGOS_BQ27421_ADDR,
                             MGOS_BQ27421_REG_DATA_BLOCK, block_num)) {
     return false;
   }
+  mgos_bq27421_sleep();
   if (!mgos_i2c_read_reg_n(ctx->bus, MGOS_BQ27421_ADDR,
                            MGOS_BQ27421_REG_BLOCK_DATA + block_offset, len,
                            data)) {
@@ -139,9 +147,12 @@ bool mgos_bq27421_data_read(struct mgos_bq27421 *ctx, uint8_t data_class,
 
 bool mgos_bq27421_data_write(struct mgos_bq27421 *ctx, uint8_t data_class,
                              uint8_t offset, uint8_t len, const uint8_t *data) {
-  if (!mgos_bq27421_enter_cfg_update(ctx)) return false;
+  if (!mgos_bq27421_enter_cfg_update(ctx)) {
+    return false;
+  }
   uint8_t old_data[len], old_cs = 0;
   if (!mgos_bq27421_data_read(ctx, data_class, offset, len, old_data) ||
+      !mgos_bq27421_sleep() ||
       !mgos_i2c_read_reg_n(ctx->bus, MGOS_BQ27421_ADDR,
                            MGOS_BQ27421_REG_BLOCK_DATA_CHECKSUM, 1, &old_cs)) {
     return false;
@@ -162,11 +173,13 @@ bool mgos_bq27421_data_write(struct mgos_bq27421 *ctx, uint8_t data_class,
                             data)) {
     return false;
   }
+  mgos_bq27421_sleep();
   // Writing checksum commits the update.
   if (!mgos_i2c_write_reg_b(ctx->bus, MGOS_BQ27421_ADDR,
                             MGOS_BQ27421_REG_BLOCK_DATA_CHECKSUM, new_cs)) {
     return false;
   }
+  mgos_bq27421_sleep();
   return true;
 }
 
