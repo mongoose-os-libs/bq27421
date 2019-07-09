@@ -88,6 +88,7 @@ enum mgos_bq27421_ctl_cmd {
 };
 
 #define MGOS_BQ27421_FLAG_CFGUPMODE (1 << 4)
+#define MGOS_BQ27421_FLAG_ITPOR (1 << 5)
 
 struct mgos_bq27421 *mgos_bq27421_create(struct mgos_i2c *bus);
 
